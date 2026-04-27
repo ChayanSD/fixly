@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Fixly AI Rewrite",
+  "version": "0.1.0",
+  "description": "Rewrite selected text inside editors with a small AI action popup.",
+  "permissions": [],
+  "host_permissions": ["<all_urls>"],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["dist/content.js"],
+      "css": ["dist/content.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}

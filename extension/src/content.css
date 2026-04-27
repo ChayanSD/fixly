@@ -1,0 +1,128 @@
+.fixly-ai-popup {
+  position: fixed;
+  z-index: 2147483647;
+  min-width: 178px;
+  padding: 8px;
+  border: 1px solid rgba(139, 180, 255, 0.24);
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 20% 0%, rgba(110, 168, 255, 0.32), transparent 34%),
+    linear-gradient(145deg, rgba(7, 18, 39, 0.88), rgba(11, 31, 67, 0.78));
+  box-shadow:
+    0 18px 50px rgba(4, 10, 24, 0.42),
+    0 0 28px rgba(80, 140, 255, 0.26);
+  color: #f7fbff;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  transform: translateY(8px) scale(0.96);
+  transform-origin: top center;
+  opacity: 0;
+  backdrop-filter: blur(18px) saturate(150%);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+  transition:
+    opacity 150ms ease,
+    transform 150ms ease;
+  user-select: none;
+}
+
+.fixly-ai-popup[data-open="true"] {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.fixly-ai-popup__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px 8px;
+  color: rgba(229, 240, 255, 0.88);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.fixly-ai-popup__spark {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 35% 30%, #ffffff, #91c5ff 36%, #7c5cff 72%, #1b2a68);
+  box-shadow: 0 0 16px rgba(127, 184, 255, 0.8);
+}
+
+.fixly-ai-popup__actions {
+  display: grid;
+  gap: 3px;
+}
+
+.fixly-ai-popup__button {
+  width: 100%;
+  min-height: 34px;
+  border: 0;
+  border-radius: 11px;
+  padding: 8px 10px;
+  background: transparent;
+  color: #eef6ff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 520;
+  letter-spacing: 0;
+  text-align: left;
+  transition:
+    background 120ms ease,
+    color 120ms ease,
+    transform 120ms ease;
+}
+
+.fixly-ai-popup__button:hover,
+.fixly-ai-popup__button:focus-visible {
+  outline: none;
+  background: rgba(137, 186, 255, 0.16);
+  color: #ffffff;
+}
+
+.fixly-ai-popup__button:active {
+  transform: scale(0.985);
+}
+
+.fixly-ai-popup__status {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 7px 4px;
+  color: rgba(229, 240, 255, 0.82);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.fixly-ai-popup[data-loading="true"] .fixly-ai-popup__status,
+.fixly-ai-popup[data-error="true"] .fixly-ai-popup__status {
+  display: flex;
+}
+
+.fixly-ai-popup[data-loading="true"] .fixly-ai-popup__actions {
+  opacity: 0.42;
+  pointer-events: none;
+}
+
+.fixly-ai-popup__spinner {
+  display: none;
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+  border: 2px solid rgba(190, 219, 255, 0.22);
+  border-top-color: #b9d8ff;
+  border-radius: 50%;
+  animation: fixly-spin 700ms linear infinite;
+}
+
+.fixly-ai-popup[data-loading="true"] .fixly-ai-popup__spinner {
+  display: block;
+}
+
+@keyframes fixly-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
