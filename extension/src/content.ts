@@ -31,7 +31,7 @@ interface EditableSelection {
 
 type StoredSelection = InputSelection | EditableSelection;
 
-const API_URL = "http://localhost:4000/api/v1/rewrites";
+const API_URL = "http://e5jz0yfztm86pkh2wgop9di9.187.124.215.226.sslip.io/api/v1/rewrites";
 const INSTALL_ID_KEY = "fixlyInstallId";
 const MIN_SELECTION_LENGTH = 3;
 const POPUP_MARGIN = 10;
