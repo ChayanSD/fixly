@@ -15,7 +15,7 @@ interface ActionOption {
   label: string;
 }
 
-type IconName = "briefcase" | "check" | "compress" | "expand" | "message" | "sparkles" | "wand";
+type IconName = "arrow" | "briefcase" | "check" | "compress" | "expand" | "message" | "sparkles" | "wand";
 
 interface InputSelection {
   kind: "input";
@@ -35,7 +35,6 @@ interface EditableSelection {
 type StoredSelection = InputSelection | EditableSelection;
 
 const API_URL = "https://chayansd.pro.bd/api/v1/rewrites";
-const AUTO_REWRITE_DELAY_MS = 650;
 const INSTALL_ID_KEY = "fixlyInstallId";
 const MIN_SELECTION_LENGTH = 3;
 const POPUP_MARGIN = 10;
@@ -49,11 +48,8 @@ const ACTIONS: ActionOption[] = [
 
 let popup: HTMLDivElement | null = null;
 let storedSelection: StoredSelection | null = null;
-let autoRewriteTimer: number | undefined;
 let fallbackInstallId: string | null = null;
 let hideTimer: number | undefined;
-let isRewriting = false;
-let lastAutoRewriteKey = "";
 
 function createPopup() {
   const panel = document.createElement("div");
@@ -101,13 +97,13 @@ function createPopup() {
   customInput.maxLength = 240;
   customInput.placeholder = "Custom instruction...";
   customInput.rows = 2;
-  customInput.addEventListener("focus", cancelAutoRewrite);
-  customInput.addEventListener("input", cancelAutoRewrite);
 
   const customButton = document.createElement("button");
   customButton.type = "submit";
   customButton.className = "fixly-ai-popup__submit";
-  customButton.append(createIcon("sparkles"), document.createTextNode("Apply"));
+  customButton.setAttribute("aria-label", "Apply custom instruction");
+  customButton.title = "Apply";
+  customButton.append(createIcon("arrow"));
 
   custom.append(customInput, customButton);
   custom.addEventListener("submit", (event) => {
@@ -155,6 +151,8 @@ function createIcon(name: IconName) {
 }
 
 const iconPaths: Record<IconName, string> = {
+  arrow:
+    '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none"><path d="M5 12h13.25M13.5 6.75 18.75 12l-5.25 5.25" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   briefcase:
     '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none"><path d="M9.75 6.75V5.5A2.5 2.5 0 0 1 12.25 3h.5a2.5 2.5 0 0 1 2.5 2.5v1.25M4.75 9.25h14.5M8.25 12.25h7.5M5.5 6.75h13A1.5 1.5 0 0 1 20 8.25v9.25a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8.25a1.5 1.5 0 0 1 1.5-1.5Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   check:
@@ -218,7 +216,6 @@ function hidePopup() {
   }
 
   popup.dataset.open = "false";
-  cancelAutoRewrite();
   setStatus("", "idle");
 }
 
@@ -236,7 +233,6 @@ function checkSelection() {
   if (inputSelection) {
     storedSelection = inputSelection;
     showPopup(getTextControlSelectionRect(inputSelection.element, inputSelection.end));
-    scheduleAutoRewrite();
     return;
   }
 
@@ -244,7 +240,6 @@ function checkSelection() {
   if (editableSelection) {
     storedSelection = editableSelection;
     showPopup(getRangeRect(editableSelection.range));
-    scheduleAutoRewrite();
     return;
   }
 
@@ -377,37 +372,12 @@ function getTextControlSelectionRect(element: HTMLInputElement | HTMLTextAreaEle
   );
 }
 
-function scheduleAutoRewrite() {
-  cancelAutoRewrite();
-
-  if (!storedSelection || isRewriting) {
-    return;
-  }
-
-  const rewriteKey = `${storedSelection.kind}:${storedSelection.text}`;
-  if (rewriteKey === lastAutoRewriteKey) {
-    return;
-  }
-
-  autoRewriteTimer = window.setTimeout(() => {
-    lastAutoRewriteKey = rewriteKey;
-    void rewriteSelection();
-  }, AUTO_REWRITE_DELAY_MS);
-}
-
-function cancelAutoRewrite() {
-  window.clearTimeout(autoRewriteTimer);
-  autoRewriteTimer = undefined;
-}
-
 async function rewriteSelection(action?: RewriteAction, instruction?: string) {
   if (!storedSelection) {
     hidePopup();
     return;
   }
 
-  cancelAutoRewrite();
-  isRewriting = true;
   setStatus("Rewriting...", "loading");
 
   try {
@@ -444,8 +414,6 @@ async function rewriteSelection(action?: RewriteAction, instruction?: string) {
   } catch (error) {
     console.error("Fixly rewrite failed", error);
     setStatus("Could not rewrite. Try again.", "error");
-  } finally {
-    isRewriting = false;
   }
 }
 
