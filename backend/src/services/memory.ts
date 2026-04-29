@@ -1,7 +1,8 @@
 import { eq } from "drizzle-orm";
 
 import { db } from "../db/index.js";
-import { installations } from "../db/schema.js";
+import { installations, writingProfiles } from "../db/schema.js";
+import { summarizeLearnedBehavior } from "./behavior.js";
 
 export async function ensureInstallation(installId: string) {
   await db
@@ -32,4 +33,23 @@ export async function updateMemory(installId: string, memory: string | null) {
     });
 
   return memory;
+}
+
+export async function getLearnedBehavior(installId: string) {
+  const [profile] = await db
+    .select({
+      casualScore: writingProfiles.casualScore,
+      clarityScore: writingProfiles.clarityScore,
+      commonContext: writingProfiles.commonContext,
+      formalityScore: writingProfiles.formalityScore,
+      preferredLength: writingProfiles.preferredLength,
+      preferredTone: writingProfiles.preferredTone,
+      professionalScore: writingProfiles.professionalScore,
+      shorterScore: writingProfiles.shorterScore
+    })
+    .from(writingProfiles)
+    .where(eq(writingProfiles.installId, installId))
+    .limit(1);
+
+  return summarizeLearnedBehavior(profile ?? null);
 }

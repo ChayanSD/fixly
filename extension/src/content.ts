@@ -11,8 +11,11 @@ declare const chrome: {
 
 interface ActionOption {
   action: RewriteAction;
+  icon: IconName;
   label: string;
 }
+
+type IconName = "briefcase" | "check" | "compress" | "expand" | "message" | "sparkles" | "wand";
 
 interface InputSelection {
   kind: "input";
@@ -31,17 +34,17 @@ interface EditableSelection {
 
 type StoredSelection = InputSelection | EditableSelection;
 
-const API_URL = "http://e5jz0yfztm86pkh2wgop9di9.187.124.215.226.sslip.io/api/v1/rewrites";
+const API_URL = "https://chayansd.pro.bd/api/v1/rewrites";
 const AUTO_REWRITE_DELAY_MS = 650;
 const INSTALL_ID_KEY = "fixlyInstallId";
 const MIN_SELECTION_LENGTH = 3;
 const POPUP_MARGIN = 10;
 const ACTIONS: ActionOption[] = [
-  { action: "fix_grammar", label: "Fix grammar" },
-  { action: "professional", label: "Make professional" },
-  { action: "casual", label: "Make casual" },
-  { action: "shorter", label: "Make shorter" },
-  { action: "clearer", label: "Make clearer" }
+  { action: "fix_grammar", icon: "check", label: "Fix grammar" },
+  { action: "professional", icon: "briefcase", label: "Make professional" },
+  { action: "casual", icon: "message", label: "Make casual" },
+  { action: "shorter", icon: "compress", label: "Make shorter" },
+  { action: "clearer", icon: "sparkles", label: "Make clearer" }
 ];
 
 let popup: HTMLDivElement | null = null;
@@ -61,13 +64,22 @@ function createPopup() {
   const header = document.createElement("div");
   header.className = "fixly-ai-popup__header";
 
+  const brand = document.createElement("div");
+  brand.className = "fixly-ai-popup__brand";
+
+  const brandIcon = document.createElement("span");
+  brandIcon.className = "fixly-ai-popup__brand-icon";
+  brandIcon.append(createIcon("wand"));
+
   const spark = document.createElement("span");
   spark.className = "fixly-ai-popup__spark";
+  spark.append(createIcon("expand"));
 
   const title = document.createElement("span");
-  title.textContent = "Rewrite with AI";
+  title.textContent = "Fixly";
 
-  header.append(spark, title);
+  brand.append(brandIcon, title);
+  header.append(brand, spark);
 
   const actions = document.createElement("div");
   actions.className = "fixly-ai-popup__actions";
@@ -76,7 +88,7 @@ function createPopup() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "fixly-ai-popup__button";
-    button.textContent = option.label;
+    button.append(createIcon(option.icon), document.createTextNode(option.label));
     button.addEventListener("click", () => void rewriteSelection(option.action));
     actions.append(button);
   }
@@ -95,7 +107,7 @@ function createPopup() {
   const customButton = document.createElement("button");
   customButton.type = "submit";
   customButton.className = "fixly-ai-popup__submit";
-  customButton.textContent = "Apply";
+  customButton.append(createIcon("sparkles"), document.createTextNode("Apply"));
 
   custom.append(customInput, customButton);
   custom.addEventListener("submit", (event) => {
@@ -134,6 +146,30 @@ function getPopup() {
   popup ??= createPopup();
   return popup;
 }
+
+function createIcon(name: IconName) {
+  const wrapper = document.createElement("span");
+  wrapper.className = "fixly-ai-popup__icon";
+  wrapper.innerHTML = iconPaths[name];
+  return wrapper;
+}
+
+const iconPaths: Record<IconName, string> = {
+  briefcase:
+    '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none"><path d="M9.75 6.75V5.5A2.5 2.5 0 0 1 12.25 3h.5a2.5 2.5 0 0 1 2.5 2.5v1.25M4.75 9.25h14.5M8.25 12.25h7.5M5.5 6.75h13A1.5 1.5 0 0 1 20 8.25v9.25a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8.25a1.5 1.5 0 0 1 1.5-1.5Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  check:
+    '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none"><path d="m5 12.5 4.25 4.25L19 7" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M20.5 12A8.5 8.5 0 1 1 12 3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+  compress:
+    '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none"><path d="M8.5 4.5H4.75v3.75M15.5 4.5h3.75v3.75M8.5 19.5H4.75v-3.75M15.5 19.5h3.75v-3.75M9.25 9.25 4.75 4.75M14.75 9.25l4.5-4.5M9.25 14.75l-4.5 4.5M14.75 14.75l4.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  expand:
+    '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none"><path d="M8.5 4.75H4.75V8.5M15.5 4.75h3.75V8.5M8.5 19.25H4.75V15.5M15.5 19.25h3.75V15.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  message:
+    '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none"><path d="M7.75 10.75h8.5M7.75 14.25h5.5M5.5 18.25l-2 2V6.75A2.75 2.75 0 0 1 6.25 4h11.5a2.75 2.75 0 0 1 2.75 2.75v8.75a2.75 2.75 0 0 1-2.75 2.75H5.5Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  sparkles:
+    '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none"><path d="M12 3.75 13.3 8.7 18.25 10l-4.95 1.3L12 16.25l-1.3-4.95L5.75 10l4.95-1.3L12 3.75ZM18.5 14.75l.65 2.35 2.35.65-2.35.65-.65 2.35-.65-2.35-2.35-.65 2.35-.65.65-2.35ZM5.5 14.25l.5 1.75 1.75.5-1.75.5-.5 1.75L5 17l-1.75-.5L5 16l.5-1.75Z" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  wand:
+    '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none"><path d="m14.75 5.25 4 4M4.75 19.25l10.5-10.5M13.5 4l1.25-2 1.25 2 2 1.25-2 1.25-1.25 2-1.25-2-2-1.25L13.5 4ZM18.75 15.25l.75-1.25.75 1.25 1.25.75-1.25.75-.75 1.25-.75-1.25-1.25-.75 1.25-.75ZM6.25 5.25 7 4l.75 1.25L9 6l-1.25.75L7 8l-.75-1.25L5 6l1.25-.75Z" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+};
 
 function setStatus(message: string, state: "idle" | "loading" | "error") {
   const panel = getPopup();

@@ -127,3 +127,16 @@ PUT /api/v1/installations/:installId/memory
 ```
 
 The backend stores rewrite metadata in Postgres, not selected text or rewritten output. Redis stores short-lived cache entries and daily quota counters.
+
+## Background Sync And Behavior
+
+Rewrite responses are returned before non-critical analytics writes finish. The backend logs rewrite metadata and updates writing behavior in a background task so slow Postgres writes do not block the user response.
+
+Behavior storage is aggregate-only:
+
+```txt
+writing_profiles
+writing_behavior_daily
+```
+
+The backend stores preference scores, context counts, input length totals, latency totals, cache hit counts, and action counts. It does not store selected text or rewritten output. Learned behavior is used only as a light style hint, and the current action/custom instruction always wins.

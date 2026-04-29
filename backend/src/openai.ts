@@ -27,6 +27,7 @@ interface OpenAIResponse {
 
 interface OpenAIRewriteInput {
   action?: RewriteAction;
+  behavior?: string | null;
   instruction?: string;
   memory?: string | null;
   text: string;

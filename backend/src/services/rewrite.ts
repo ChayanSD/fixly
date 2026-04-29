@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { ApiError } from "../api.js";
+import { runInBackground } from "../background.js";
 import { estimateOpenAICost, estimateTokens } from "../cost.js";
 import { cacheHash } from "../keys.js";
 import { rewriteWithOpenAI } from "../openai.js";
@@ -8,9 +9,10 @@ import type { RewriteRequest } from "../validation.js";
 import { countWords } from "../validation.js";
 import { getCachedRewrite, setCachedRewrite } from "./cache.js";
 import { acquireRewriteLock, releaseRewriteLock } from "./lock.js";
-import { getMemory } from "./memory.js";
+import { getLearnedBehavior, getMemory } from "./memory.js";
 import { consumeDailyQuota } from "./quota.js";
 import { logRewriteEvent } from "./usage.js";
+import { recordWritingBehavior } from "./behavior.js";
 
 interface RewriteResult {
   cached: boolean;
@@ -24,13 +26,14 @@ export async function rewrite(payload: RewriteRequest, requestId = randomUUID())
   const startedAt = Date.now();
   const quota = await consumeDailyQuota(payload.installId);
   const memory = await getMemory(payload.installId);
-  const hash = cacheHash(payload, memory);
-  const estimatedInputTokens = estimateTokens([payload.text, payload.instruction, memory].filter(Boolean).join("\n"));
+  const behavior = await getLearnedBehavior(payload.installId);
+  const hash = cacheHash(payload, memory, behavior);
+  const estimatedInputTokens = estimateTokens([payload.text, payload.instruction, memory, behavior].filter(Boolean).join("\n"));
   const instructionWords = countWords(payload.instruction);
 
   const cached = await getCachedRewrite(hash);
   if (cached) {
-    await logRewriteEvent({
+    runInBackground(() => logRewriteEvent({
       action: payload.action,
       cacheHit: true,
       editorType: payload.source?.editorType,
@@ -45,7 +48,8 @@ export async function rewrite(payload: RewriteRequest, requestId = randomUUID())
       latencyMs: Date.now() - startedAt,
       requestId,
       status: "success"
-    });
+    }), "Rewrite cache-hit log");
+    runInBackground(() => recordWritingBehavior({ cacheHit: true, latencyMs: Date.now() - startedAt, payload }), "Writing behavior cache-hit sync");
 
     return {
       cached: true,
@@ -63,7 +67,7 @@ export async function rewrite(payload: RewriteRequest, requestId = randomUUID())
       await wait(350);
       const retryCached = await getCachedRewrite(hash);
       if (retryCached) {
-        await logRewriteEvent({
+        runInBackground(() => logRewriteEvent({
           action: payload.action,
           cacheHit: true,
           editorType: payload.source?.editorType,
@@ -78,7 +82,8 @@ export async function rewrite(payload: RewriteRequest, requestId = randomUUID())
           latencyMs: Date.now() - startedAt,
           requestId,
           status: "success"
-        });
+        }), "Rewrite duplicate cache-hit log");
+        runInBackground(() => recordWritingBehavior({ cacheHit: true, latencyMs: Date.now() - startedAt, payload }), "Writing behavior duplicate cache-hit sync");
 
         return {
           cached: true,
@@ -94,6 +99,7 @@ export async function rewrite(payload: RewriteRequest, requestId = randomUUID())
 
     const openAiResult = await rewriteWithOpenAI({
       action: payload.action,
+      behavior,
       instruction: payload.instruction,
       memory,
       text: payload.text
@@ -102,7 +108,7 @@ export async function rewrite(payload: RewriteRequest, requestId = randomUUID())
     const estimatedCostUsd = estimateOpenAICost(openAiResult.inputTokens ?? estimatedInputTokens, estimatedOutputTokens);
 
     await setCachedRewrite(hash, openAiResult.text);
-    await logRewriteEvent({
+    runInBackground(() => logRewriteEvent({
       action: payload.action,
       cacheHit: false,
       editorType: payload.source?.editorType,
@@ -117,7 +123,8 @@ export async function rewrite(payload: RewriteRequest, requestId = randomUUID())
       latencyMs: Date.now() - startedAt,
       requestId,
       status: "success"
-    });
+    }), "Rewrite success log");
+    runInBackground(() => recordWritingBehavior({ cacheHit: false, latencyMs: Date.now() - startedAt, payload }), "Writing behavior success sync");
 
     return {
       cached: false,
@@ -127,7 +134,7 @@ export async function rewrite(payload: RewriteRequest, requestId = randomUUID())
       result: openAiResult.text
     };
   } catch (error) {
-    await logRewriteEvent({
+    runInBackground(() => logRewriteEvent({
       action: payload.action,
       cacheHit: false,
       editorType: payload.source?.editorType,
@@ -143,7 +150,7 @@ export async function rewrite(payload: RewriteRequest, requestId = randomUUID())
       latencyMs: Date.now() - startedAt,
       requestId,
       status: "failed"
-    });
+    }), "Rewrite failure log");
 
     throw error;
   } finally {

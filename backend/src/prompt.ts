@@ -10,21 +10,24 @@ const actionInstructions: Record<RewriteAction, string> = {
 
 interface RewritePromptInput {
   action?: RewriteAction;
+  behavior?: string | null;
   instruction?: string;
   memory?: string | null;
   text: string;
 }
 
-export function buildRewritePrompt({ action, instruction, memory, text }: RewritePromptInput) {
+export function buildRewritePrompt({ action, behavior, instruction, memory, text }: RewritePromptInput) {
   const intent = action ? actionInstructions[action] : "Fix grammar, spelling, punctuation, and clarity.";
   const extraInstruction = instruction ? `User instruction: ${instruction}` : "";
   const userMemory = memory ? `User writing preferences: ${memory}` : "";
+  const learnedBehavior = behavior ? `Learned style hints: ${behavior}` : "";
 
   return [
     "Rewrite short user-selected text for chats, emails, and everyday professional communication.",
     intent,
     extraInstruction,
     userMemory,
+    learnedBehavior,
     "Keep the original meaning.",
     "Do not add fake information.",
     "Always fix grammar and spelling unless the user explicitly asks otherwise.",

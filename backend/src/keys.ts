@@ -3,12 +3,13 @@ import { createHash } from "node:crypto";
 import { env } from "./env.js";
 import type { RewriteRequest } from "./validation.js";
 
-export function cacheHash(payload: RewriteRequest, memory: string | null) {
+export function cacheHash(payload: RewriteRequest, memory: string | null, behavior: string | null) {
   return createHash("sha256")
     .update(
       JSON.stringify({
         action: payload.action ?? null,
         instruction: payload.instruction ?? null,
+        behavior,
         memory,
         model: env.OPENAI_MODEL,
         text: payload.text
