@@ -3,7 +3,7 @@
   "name": "Fixly AI Rewrite",
   "version": "0.1.0",
   "description": "Rewrite selected text inside editors with a small AI action popup.",
-  "permissions": [],
+  "permissions": ["storage"],
   "host_permissions": ["<all_urls>"],
   "content_scripts": [
     {

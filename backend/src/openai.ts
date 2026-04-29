@@ -1,5 +1,7 @@
-import type { RewriteAction } from "./validation.js";
+import { ApiError } from "./api.js";
+import { env } from "./env.js";
 import { buildRewritePrompt } from "./prompt.js";
+import type { RewriteAction } from "./validation.js";
 
 interface OpenAITextContent {
   type?: string;
@@ -14,49 +16,66 @@ interface OpenAIOutputItem {
 interface OpenAIResponse {
   output?: OpenAIOutputItem[];
   output_text?: string;
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+  };
   error?: {
     message?: string;
   };
 }
 
-export async function rewriteWithOpenAI(text: string, action: RewriteAction) {
-  const apiKey = process.env.OPENAI_API_KEY;
-  const model = process.env.OPENAI_MODEL ?? "gpt-5.4-mini";
+interface OpenAIRewriteInput {
+  action?: RewriteAction;
+  instruction?: string;
+  memory?: string | null;
+  text: string;
+}
 
-  if (!apiKey) {
-    throw new Error("OPENAI_API_KEY is not configured.");
-  }
-
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`
-    },
-    body: JSON.stringify({
-      model,
-      input: buildRewritePrompt(text, action),
-      max_output_tokens: 1200,
-      text: {
-        format: {
-          type: "text"
+export async function rewriteWithOpenAI(input: OpenAIRewriteInput) {
+  try {
+    const response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${env.OPENAI_API_KEY}`
+      },
+      signal: AbortSignal.timeout(env.AI_TIMEOUT_MS),
+      body: JSON.stringify({
+        model: env.OPENAI_MODEL,
+        input: buildRewritePrompt(input),
+        max_output_tokens: 200,
+        text: {
+          format: {
+            type: "text"
+          }
         }
-      }
-    })
-  });
+      })
+    });
 
-  const data = (await response.json()) as OpenAIResponse;
+    const data = (await response.json()) as OpenAIResponse;
 
-  if (!response.ok) {
-    throw new Error(data.error?.message ?? "OpenAI request failed.");
+    if (!response.ok) {
+      throw new ApiError(502, "ai_failed", data.error?.message ?? "OpenAI request failed.");
+    }
+
+    const result = extractText(data).trim();
+    if (!result) {
+      throw new ApiError(502, "ai_failed", "OpenAI returned an empty response.");
+    }
+
+    return {
+      inputTokens: data.usage?.input_tokens,
+      outputTokens: data.usage?.output_tokens,
+      text: result
+    };
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw error;
+    }
+
+    throw new ApiError(502, "ai_failed", "OpenAI request failed.");
   }
-
-  const result = extractText(data).trim();
-  if (!result) {
-    throw new Error("OpenAI returned an empty response.");
-  }
-
-  return result;
 }
 
 function extractText(data: OpenAIResponse) {

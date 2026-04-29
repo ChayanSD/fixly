@@ -1,22 +1,18 @@
+import { randomUUID } from "node:crypto";
+
 import cors from "cors";
-import dotenv from "dotenv";
 import express from "express";
 import { ZodError } from "zod";
 
-import { rewriteText } from "./provider.js";
-import { rewriteRequestSchema } from "./validation.js";
-
-dotenv.config();
+import { ApiError, sendData, sendError, zodDetails } from "./api.js";
+import { allowedOrigins, env } from "./env.js";
+import { getMemory, updateMemory } from "./services/memory.js";
+import { rewrite } from "./services/rewrite.js";
+import { memoryParamsSchema, rewriteRequestSchema, updateMemoryRequestSchema } from "./validation.js";
 
 const app = express();
-const port = Number(process.env.PORT ?? 4000);
-const corsAllowAll = process.env.CORS_ALLOW_ALL === "true";
-const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? "")
-  .split(",")
-  .map((origin) => origin.trim())
-  .filter(Boolean);
 
-app.use(express.json({ limit: "32kb" }));
+app.use(express.json({ limit: "8kb" }));
 app.use(
   cors({
     origin(origin, callback) {
@@ -32,7 +28,7 @@ app.use(
 );
 
 function isAllowedOrigin(origin: string | undefined) {
-  if (corsAllowAll) {
+  if (env.CORS_ALLOW_ALL) {
     return true;
   }
 
@@ -51,7 +47,7 @@ function isAllowedOrigin(origin: string | undefined) {
 }
 
 app.get("/health", (_request, response) => {
-  response.json({ ok: true });
+  sendData(response, { ok: true });
 });
 
 app.get("/test", (_request, response) => {
@@ -112,22 +108,104 @@ app.get("/test", (_request, response) => {
 </html>`);
 });
 
-app.post("/api/rewrite", async (request, response) => {
+app.post("/api/v1/rewrites", async (request, response) => {
+  const requestId = randomUUID();
+
   try {
     const payload = rewriteRequestSchema.parse(request.body);
-    const result = await rewriteText(payload);
-    response.json({ result });
+    const result = await rewrite(payload, requestId);
+
+    response.setHeader("X-RateLimit-Limit", env.DAILY_REWRITE_LIMIT.toString());
+    response.setHeader("X-RateLimit-Remaining", result.remainingToday.toString());
+    response.setHeader("X-RateLimit-Reset", result.resetAt.toString());
+
+    sendData(response, {
+      cached: result.cached,
+      remainingToday: result.remainingToday,
+      requestId: result.requestId,
+      result: result.result
+    });
   } catch (error) {
     if (error instanceof ZodError) {
-      response.status(400).json({ error: "Invalid request.", details: error.flatten() });
+      sendError(response, 422, "validation_error", "Request validation failed.", requestId, zodDetails(error));
+      return;
+    }
+
+    if (error instanceof ApiError) {
+      if (error.status === 429 && typeof error.details === "object" && error.details !== null && "resetAt" in error.details) {
+        response.setHeader("Retry-After", String(Math.max(Number(error.details.resetAt) - Math.floor(Date.now() / 1000), 1)));
+      }
+
+      sendError(response, error.status, error.code, error.message, requestId, error.details);
       return;
     }
 
     console.error("Rewrite failed", error);
-    response.status(500).json({ error: "Rewrite failed." });
+    sendError(response, 500, "ai_failed", "Rewrite failed.", requestId);
   }
 });
 
-app.listen(port, () => {
-  console.log(`Fixly backend listening on http://localhost:${port}`);
+app.post("/api/rewrite", async (request, response) => {
+  const requestId = randomUUID();
+  const parsed = rewriteRequestSchema.safeParse({
+    ...request.body,
+    installId: request.body?.installId ?? "legacy-local-install"
+  });
+
+  if (!parsed.success) {
+    sendError(response, 422, "validation_error", "Request validation failed.", requestId, zodDetails(parsed.error));
+    return;
+  }
+
+  try {
+    const result = await rewrite(parsed.data, requestId);
+    response.json({ result: result.result });
+  } catch (error) {
+    if (error instanceof ApiError) {
+      sendError(response, error.status, error.code, error.message, requestId, error.details);
+      return;
+    }
+
+    console.error("Legacy rewrite failed", error);
+    sendError(response, 500, "ai_failed", "Rewrite failed.", requestId);
+  }
+});
+
+app.get("/api/v1/installations/:installId/memory", async (request, response) => {
+  const requestId = randomUUID();
+
+  try {
+    const { installId } = memoryParamsSchema.parse(request.params);
+    sendData(response, { installId, memory: await getMemory(installId) });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      sendError(response, 422, "validation_error", "Request validation failed.", requestId, zodDetails(error));
+      return;
+    }
+
+    console.error("Memory read failed", error);
+    sendError(response, 500, "service_unavailable", "Memory is temporarily unavailable.", requestId);
+  }
+});
+
+app.put("/api/v1/installations/:installId/memory", async (request, response) => {
+  const requestId = randomUUID();
+
+  try {
+    const { installId } = memoryParamsSchema.parse(request.params);
+    const { memory } = updateMemoryRequestSchema.parse(request.body);
+    sendData(response, { installId, memory: await updateMemory(installId, memory) });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      sendError(response, 422, "validation_error", "Request validation failed.", requestId, zodDetails(error));
+      return;
+    }
+
+    console.error("Memory update failed", error);
+    sendError(response, 500, "service_unavailable", "Memory is temporarily unavailable.", requestId);
+  }
+});
+
+app.listen(env.PORT, () => {
+  console.log(`Fixly backend listening on http://localhost:${env.PORT}`);
 });

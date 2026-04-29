@@ -1,5 +1,14 @@
 type RewriteAction = "fix_grammar" | "professional" | "casual" | "shorter" | "clearer";
 
+declare const chrome: {
+  storage: {
+    local: {
+      get(keys: string[]): Promise<Record<string, unknown>>;
+      set(items: Record<string, unknown>): Promise<void>;
+    };
+  };
+};
+
 interface ActionOption {
   action: RewriteAction;
   label: string;
@@ -22,7 +31,8 @@ interface EditableSelection {
 
 type StoredSelection = InputSelection | EditableSelection;
 
-const API_URL = "http://localhost:4000/api/rewrite";
+const API_URL = "http://localhost:4000/api/v1/rewrites";
+const INSTALL_ID_KEY = "fixlyInstallId";
 const MIN_SELECTION_LENGTH = 3;
 const POPUP_MARGIN = 10;
 const ACTIONS: ActionOption[] = [
@@ -299,19 +309,28 @@ async function rewriteSelection(action: RewriteAction) {
     const response = await fetch(API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: storedSelection.text, action })
+      body: JSON.stringify({
+        action,
+        installId: await getInstallId(),
+        source: {
+          editorType: storedSelection.kind === "input" ? getInputEditorType(storedSelection.element) : "contenteditable",
+          hostname: window.location.hostname,
+          origin: window.location.origin
+        },
+        text: storedSelection.text
+      })
     });
 
     if (!response.ok) {
       throw new Error(`Request failed with status ${response.status}`);
     }
 
-    const data = (await response.json()) as { result?: unknown };
-    if (typeof data.result !== "string" || data.result.trim().length === 0) {
+    const data = (await response.json()) as { data?: { result?: unknown } };
+    if (typeof data.data?.result !== "string" || data.data.result.trim().length === 0) {
       throw new Error("Backend returned an empty result.");
     }
 
-    replaceSelection(data.result);
+    replaceSelection(data.data.result);
     storedSelection = null;
     hidePopup();
   } catch (error) {
@@ -345,6 +364,21 @@ function replaceSelection(result: string) {
   selection?.removeAllRanges();
   selection?.addRange(range);
   element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertReplacementText", data: result }));
+}
+
+async function getInstallId() {
+  const stored = await chrome.storage.local.get([INSTALL_ID_KEY]);
+  if (typeof stored[INSTALL_ID_KEY] === "string") {
+    return stored[INSTALL_ID_KEY];
+  }
+
+  const installId = `fx_${crypto.randomUUID().replace(/-/g, "")}`;
+  await chrome.storage.local.set({ [INSTALL_ID_KEY]: installId });
+  return installId;
+}
+
+function getInputEditorType(element: HTMLInputElement | HTMLTextAreaElement) {
+  return element instanceof HTMLTextAreaElement ? "textarea" : "input";
 }
 
 function clamp(value: number, min: number, max: number) {
