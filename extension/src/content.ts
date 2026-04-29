@@ -32,6 +32,7 @@ interface EditableSelection {
 type StoredSelection = InputSelection | EditableSelection;
 
 const API_URL = "http://e5jz0yfztm86pkh2wgop9di9.187.124.215.226.sslip.io/api/v1/rewrites";
+const AUTO_REWRITE_DELAY_MS = 650;
 const INSTALL_ID_KEY = "fixlyInstallId";
 const MIN_SELECTION_LENGTH = 3;
 const POPUP_MARGIN = 10;
@@ -45,7 +46,11 @@ const ACTIONS: ActionOption[] = [
 
 let popup: HTMLDivElement | null = null;
 let storedSelection: StoredSelection | null = null;
+let autoRewriteTimer: number | undefined;
+let fallbackInstallId: string | null = null;
 let hideTimer: number | undefined;
+let isRewriting = false;
+let lastAutoRewriteKey = "";
 
 function createPopup() {
   const panel = document.createElement("div");
@@ -76,6 +81,31 @@ function createPopup() {
     actions.append(button);
   }
 
+  const custom = document.createElement("form");
+  custom.className = "fixly-ai-popup__custom";
+
+  const customInput = document.createElement("textarea");
+  customInput.className = "fixly-ai-popup__input";
+  customInput.maxLength = 240;
+  customInput.placeholder = "Custom instruction...";
+  customInput.rows = 2;
+  customInput.addEventListener("focus", cancelAutoRewrite);
+  customInput.addEventListener("input", cancelAutoRewrite);
+
+  const customButton = document.createElement("button");
+  customButton.type = "submit";
+  customButton.className = "fixly-ai-popup__submit";
+  customButton.textContent = "Apply";
+
+  custom.append(customInput, customButton);
+  custom.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const instruction = customInput.value.trim();
+    if (instruction.length > 0) {
+      void rewriteSelection(undefined, instruction);
+    }
+  });
+
   const status = document.createElement("div");
   status.className = "fixly-ai-popup__status";
 
@@ -86,10 +116,13 @@ function createPopup() {
   message.className = "fixly-ai-popup__message";
 
   status.append(spinner, message);
-  panel.append(header, actions, status);
+  panel.append(header, actions, custom, status);
 
   panel.addEventListener("mousedown", (event) => {
-    event.preventDefault();
+    const target = event.target;
+    if (!(target instanceof HTMLTextAreaElement)) {
+      event.preventDefault();
+    }
     event.stopPropagation();
   });
 
@@ -113,9 +146,17 @@ function setStatus(message: string, state: "idle" | "loading" | "error") {
   panel.dataset.error = String(state === "error");
 }
 
+function resetCustomInput() {
+  const input = popup?.querySelector<HTMLTextAreaElement>(".fixly-ai-popup__input");
+  if (input) {
+    input.value = "";
+  }
+}
+
 function showPopup(rect: DOMRect) {
   const panel = getPopup();
   setStatus("", "idle");
+  resetCustomInput();
   panel.style.left = "0px";
   panel.style.top = "0px";
   panel.dataset.open = "true";
@@ -141,6 +182,7 @@ function hidePopup() {
   }
 
   popup.dataset.open = "false";
+  cancelAutoRewrite();
   setStatus("", "idle");
 }
 
@@ -158,6 +200,7 @@ function checkSelection() {
   if (inputSelection) {
     storedSelection = inputSelection;
     showPopup(getTextControlSelectionRect(inputSelection.element, inputSelection.end));
+    scheduleAutoRewrite();
     return;
   }
 
@@ -165,6 +208,7 @@ function checkSelection() {
   if (editableSelection) {
     storedSelection = editableSelection;
     showPopup(getRangeRect(editableSelection.range));
+    scheduleAutoRewrite();
     return;
   }
 
@@ -297,28 +341,56 @@ function getTextControlSelectionRect(element: HTMLInputElement | HTMLTextAreaEle
   );
 }
 
-async function rewriteSelection(action: RewriteAction) {
+function scheduleAutoRewrite() {
+  cancelAutoRewrite();
+
+  if (!storedSelection || isRewriting) {
+    return;
+  }
+
+  const rewriteKey = `${storedSelection.kind}:${storedSelection.text}`;
+  if (rewriteKey === lastAutoRewriteKey) {
+    return;
+  }
+
+  autoRewriteTimer = window.setTimeout(() => {
+    lastAutoRewriteKey = rewriteKey;
+    void rewriteSelection();
+  }, AUTO_REWRITE_DELAY_MS);
+}
+
+function cancelAutoRewrite() {
+  window.clearTimeout(autoRewriteTimer);
+  autoRewriteTimer = undefined;
+}
+
+async function rewriteSelection(action?: RewriteAction, instruction?: string) {
   if (!storedSelection) {
     hidePopup();
     return;
   }
 
+  cancelAutoRewrite();
+  isRewriting = true;
   setStatus("Rewriting...", "loading");
 
   try {
+    const payload = {
+      ...(action ? { action } : {}),
+      ...(instruction ? { instruction } : {}),
+      installId: await getInstallId(),
+      source: {
+        editorType: storedSelection.kind === "input" ? getInputEditorType(storedSelection.element) : "contenteditable",
+        hostname: window.location.hostname,
+        origin: window.location.origin
+      },
+      text: storedSelection.text
+    };
+
     const response = await fetch(API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action,
-        installId: await getInstallId(),
-        source: {
-          editorType: storedSelection.kind === "input" ? getInputEditorType(storedSelection.element) : "contenteditable",
-          hostname: window.location.hostname,
-          origin: window.location.origin
-        },
-        text: storedSelection.text
-      })
+      body: JSON.stringify(payload)
     });
 
     if (!response.ok) {
@@ -336,6 +408,8 @@ async function rewriteSelection(action: RewriteAction) {
   } catch (error) {
     console.error("Fixly rewrite failed", error);
     setStatus("Could not rewrite. Try again.", "error");
+  } finally {
+    isRewriting = false;
   }
 }
 
@@ -367,14 +441,24 @@ function replaceSelection(result: string) {
 }
 
 async function getInstallId() {
-  const stored = await chrome.storage.local.get([INSTALL_ID_KEY]);
-  if (typeof stored[INSTALL_ID_KEY] === "string") {
-    return stored[INSTALL_ID_KEY];
-  }
+  try {
+    const stored = await chrome.storage.local.get([INSTALL_ID_KEY]);
+    if (typeof stored[INSTALL_ID_KEY] === "string") {
+      return stored[INSTALL_ID_KEY];
+    }
 
-  const installId = `fx_${crypto.randomUUID().replace(/-/g, "")}`;
-  await chrome.storage.local.set({ [INSTALL_ID_KEY]: installId });
-  return installId;
+    const installId = createInstallId();
+    await chrome.storage.local.set({ [INSTALL_ID_KEY]: installId });
+    return installId;
+  } catch (error) {
+    console.error("Fixly install id storage failed", error);
+    fallbackInstallId ??= createInstallId();
+    return fallbackInstallId;
+  }
+}
+
+function createInstallId() {
+  return `fx_${crypto.randomUUID().replace(/-/g, "")}`;
 }
 
 function getInputEditorType(element: HTMLInputElement | HTMLTextAreaElement) {
